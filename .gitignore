@@ -1,0 +1,66 @@
+# Dependencies
+node_modules/
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# Temporary files
+tmp/
+temp/
+cache/
+
+# Downloaded media
+downloads/
+videos/
+*.mp4
+*.m4a
+*.webm
+*.mp3
+
+# yt-dlp
+*.part
+*.ytdl
+*.json
+
+# FFmpeg temporary files
+*.tmp
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE / editors
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Runtime
+*.pid
+*.pid.lock
+
+# Coverage
+coverage/
+
+# Build/output
+dist/
+build/
+
+# Python files (if old Python backend is still in project)
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+ENV/
+
+# Local configuration
+config.local.*
