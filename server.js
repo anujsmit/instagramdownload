@@ -219,7 +219,7 @@ function normalizeInstagramUrl(value) {
 
 function safeFilename(value) {
     if (!value) {
-        return "instagram-video";
+        return "Insta-video";
     }
 
     return value
@@ -1325,7 +1325,7 @@ async function handleDownload(
                 safeFilename(
                     metadata.title ||
                     metadata.description ||
-                    "instagram-video"
+                    "instagram-video-downloaded-from-anujkatteldotcomnp"
                 );
 
             filename =
