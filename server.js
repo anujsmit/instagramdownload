@@ -33,7 +33,10 @@ const MAX_VIDEO_SIZE_MB = Number(
 const MAX_VIDEO_SIZE_BYTES =
     MAX_VIDEO_SIZE_MB * 1024 * 1024;
 
-const TEMP_ROOT = path.join(os.tmpdir(), "instagram-downloader");
+const TEMP_ROOT = path.join(
+    os.tmpdir(),
+    "instagram-downloader"
+);
 
 const IS_PRODUCTION =
     process.env.NODE_ENV === "production";
@@ -48,12 +51,21 @@ app.use(
     cors({
         origin: true,
         methods: ["GET", "POST", "DELETE", "OPTIONS"],
-        allowedHeaders: ["Content-Type"],
+        allowedHeaders: ["Content-Type", "Authorization"],
     })
 );
 
-app.use(express.json({ limit: "1mb" }));
-app.use(express.urlencoded({ extended: true }));
+app.use(
+    express.json({
+        limit: "1mb",
+    })
+);
+
+app.use(
+    express.urlencoded({
+        extended: true,
+    })
+);
 
 /*
 |--------------------------------------------------------------------------
@@ -64,27 +76,25 @@ app.use(express.urlencoded({ extended: true }));
 const downloadLimiter = rateLimit({
     windowMs: 60 * 1000,
     max: 10,
-
     standardHeaders: true,
     legacyHeaders: false,
-
     message: {
         success: false,
-        error: "Too many download requests. Please try again later.",
+        error:
+            "Too many download requests. Please try again later.",
     },
 });
 
 const metadataLimiter = rateLimit({
     windowMs: 60 * 1000,
     max: 30,
-
     standardHeaders: true,
     legacyHeaders: false,
 });
 
 /*
 |--------------------------------------------------------------------------
-| Temporary directory
+| Temporary Directory
 |--------------------------------------------------------------------------
 */
 
@@ -94,43 +104,49 @@ async function ensureTempRoot() {
     });
 }
 
-/*
-|--------------------------------------------------------------------------
-| Utility: Create unique temporary directory
-|--------------------------------------------------------------------------
-*/
-
 async function createJobDirectory() {
     await ensureTempRoot();
 
-    const id = crypto.randomBytes(16).toString("hex");
+    const id = crypto
+        .randomBytes(16)
+        .toString("hex");
 
-    const dir = path.join(TEMP_ROOT, id);
+    const directory = path.join(
+        TEMP_ROOT,
+        id
+    );
 
-    await fsp.mkdir(dir, {
+    await fsp.mkdir(directory, {
         recursive: true,
     });
 
-    return dir;
+    return directory;
 }
 
 /*
 |--------------------------------------------------------------------------
-| Utility: Cleanup
+| Cleanup
 |--------------------------------------------------------------------------
 */
 
-async function cleanupDirectory(dir) {
-    if (!dir) return;
+async function cleanupDirectory(directory) {
+    if (!directory) {
+        return;
+    }
 
     try {
-        await fsp.rm(dir, {
+        await fsp.rm(directory, {
             recursive: true,
             force: true,
         });
+
+        console.log(
+            "[CLEANUP]",
+            directory
+        );
     } catch (error) {
         console.error(
-            "[CLEANUP] Failed:",
+            "[CLEANUP ERROR]",
             error.message
         );
     }
@@ -138,12 +154,15 @@ async function cleanupDirectory(dir) {
 
 /*
 |--------------------------------------------------------------------------
-| Instagram URL validation
+| Instagram URL Validation
 |--------------------------------------------------------------------------
 */
 
 function isInstagramUrl(value) {
-    if (!value || typeof value !== "string") {
+    if (
+        !value ||
+        typeof value !== "string"
+    ) {
         return false;
     }
 
@@ -155,9 +174,10 @@ function isInstagramUrl(value) {
         return false;
     }
 
-    const hostname = url.hostname
-        .toLowerCase()
-        .replace(/^www\./, "");
+    const hostname =
+        url.hostname
+            .toLowerCase()
+            .replace(/^www\./, "");
 
     if (
         hostname !== "instagram.com" &&
@@ -166,7 +186,8 @@ function isInstagramUrl(value) {
         return false;
     }
 
-    const pathname = url.pathname.toLowerCase();
+    const pathname =
+        url.pathname.toLowerCase();
 
     return (
         pathname.startsWith("/reel/") ||
@@ -178,7 +199,7 @@ function isInstagramUrl(value) {
 
 /*
 |--------------------------------------------------------------------------
-| Normalize Instagram URL
+| Normalize URL
 |--------------------------------------------------------------------------
 */
 
@@ -192,7 +213,7 @@ function normalizeInstagramUrl(value) {
 
 /*
 |--------------------------------------------------------------------------
-| Safe filename
+| Safe Filename
 |--------------------------------------------------------------------------
 */
 
@@ -202,7 +223,10 @@ function safeFilename(value) {
     }
 
     return value
-        .replace(/[<>:"/\\|?*\x00-\x1F]/g, "")
+        .replace(
+            /[<>:"/\\|?*\x00-\x1F]/g,
+            ""
+        )
         .replace(/\s+/g, " ")
         .trim()
         .substring(0, 120);
@@ -210,72 +234,200 @@ function safeFilename(value) {
 
 /*
 |--------------------------------------------------------------------------
-| Run yt-dlp
+| Generic Command Runner
 |--------------------------------------------------------------------------
 */
 
-function runYtDlp(args, options = {}) {
-    return new Promise((resolve, reject) => {
-        console.log(
-            "[yt-dlp]",
-            YTDLP_BIN,
-            args.join(" ")
-        );
-
-        const child = spawn(YTDLP_BIN, args, {
-            cwd: options.cwd || process.cwd(),
-            env: {
-                ...process.env,
-            },
-            windowsHide: true,
-        });
-
-        let stdout = "";
-        let stderr = "";
-
-        child.stdout.on("data", (data) => {
-            stdout += data.toString();
-        });
-
-        child.stderr.on("data", (data) => {
-            const text = data.toString();
-
-            stderr += text;
-
+function runCommand(
+    command,
+    args,
+    options = {}
+) {
+    return new Promise(
+        (resolve, reject) => {
+            console.log("");
             console.log(
-                "[yt-dlp]",
-                text.trim()
+                "[COMMAND]",
+                command,
+                args.join(" ")
             );
-        });
 
-        child.on("error", (error) => {
-            reject(error);
-        });
+            const child = spawn(
+                command,
+                args,
+                {
+                    cwd:
+                        options.cwd ||
+                        process.cwd(),
 
-        child.on("close", (code) => {
-            if (code === 0) {
-                resolve({
-                    stdout,
-                    stderr,
-                });
-            } else {
-                const error = new Error(
-                    `yt-dlp exited with code ${code}`
-                );
+                    env: {
+                        ...process.env,
+                        ...(options.env || {}),
+                    },
 
-                error.code = code;
-                error.stdout = stdout;
-                error.stderr = stderr;
+                    windowsHide: true,
+                }
+            );
 
-                reject(error);
-            }
-        });
-    });
+            let stdout = "";
+            let stderr = "";
+
+            child.stdout.on(
+                "data",
+                (data) => {
+                    const text =
+                        data.toString();
+
+                    stdout += text;
+
+                    console.log(
+                        text.trim()
+                    );
+                }
+            );
+
+            child.stderr.on(
+                "data",
+                (data) => {
+                    const text =
+                        data.toString();
+
+                    stderr += text;
+
+                    console.log(
+                        text.trim()
+                    );
+                }
+            );
+
+            child.on(
+                "error",
+                (error) => {
+                    reject(error);
+                }
+            );
+
+            child.on(
+                "close",
+                (code) => {
+                    if (code === 0) {
+                        resolve({
+                            stdout,
+                            stderr,
+                            code,
+                        });
+
+                        return;
+                    }
+
+                    const error =
+                        new Error(
+                            `${command} exited with code ${code}`
+                        );
+
+                    error.code = code;
+                    error.stdout = stdout;
+                    error.stderr = stderr;
+
+                    reject(error);
+                }
+            );
+        }
+    );
 }
 
 /*
 |--------------------------------------------------------------------------
-| Get metadata
+| yt-dlp
+|--------------------------------------------------------------------------
+*/
+
+async function runYtDlp(
+    args,
+    options = {}
+) {
+    return runCommand(
+        YTDLP_BIN,
+        args,
+        options
+    );
+}
+
+/*
+|--------------------------------------------------------------------------
+| FFmpeg
+|--------------------------------------------------------------------------
+*/
+
+async function runFFmpeg(
+    args,
+    options = {}
+) {
+    return runCommand(
+        FFMPEG_BIN,
+        args,
+        options
+    );
+}
+
+/*
+|--------------------------------------------------------------------------
+| Check Dependencies
+|--------------------------------------------------------------------------
+*/
+
+async function checkDependencies() {
+    console.log(
+        "[CHECK] Checking yt-dlp..."
+    );
+
+    try {
+        const result =
+            await runYtDlp([
+                "--version",
+            ]);
+
+        console.log(
+            "[CHECK] yt-dlp:",
+            result.stdout.trim()
+        );
+    } catch (error) {
+        console.error(
+            "[CHECK] yt-dlp unavailable:",
+            error.message
+        );
+    }
+
+    console.log(
+        "[CHECK] Checking FFmpeg..."
+    );
+
+    try {
+        const result =
+            await runFFmpeg([
+                "-version",
+            ]);
+
+        const firstLine =
+            result.stdout
+                .split("\n")[0]
+                .trim();
+
+        console.log(
+            "[CHECK] FFmpeg:",
+            firstLine
+        );
+    } catch (error) {
+        console.error(
+            "[CHECK] FFmpeg unavailable:",
+            error.message
+        );
+    }
+}
+
+/*
+|--------------------------------------------------------------------------
+| Metadata
 |--------------------------------------------------------------------------
 */
 
@@ -283,23 +435,26 @@ async function getMetadata(url) {
     const args = [
         "--no-warnings",
         "--no-playlist",
+
         "--dump-single-json",
         "--skip-download",
 
-        // Prefer browser-compatible extraction.
         "--extractor-args",
         "instagram:app_id=936619743392459",
 
         url,
     ];
 
-    const result = await runYtDlp(args);
+    const result =
+        await runYtDlp(args);
 
     let data;
 
     try {
-        data = JSON.parse(result.stdout);
-    } catch (error) {
+        data = JSON.parse(
+            result.stdout
+        );
+    } catch {
         throw new Error(
             "Could not parse yt-dlp metadata response."
         );
@@ -310,14 +465,42 @@ async function getMetadata(url) {
 
 /*
 |--------------------------------------------------------------------------
-| Find downloaded video
+| File Exists
 |--------------------------------------------------------------------------
 */
 
-async function findVideoFile(directory) {
-    const entries = await fsp.readdir(directory, {
-        withFileTypes: true,
-    });
+async function fileExists(filePath) {
+    try {
+        const stat =
+            await fsp.stat(filePath);
+
+        return (
+            stat.isFile() &&
+            stat.size > 0
+        );
+    } catch {
+        return false;
+    }
+}
+
+/*
+|--------------------------------------------------------------------------
+| Find Downloaded File
+|--------------------------------------------------------------------------
+*/
+
+async function findFileByPrefix(
+    directory,
+    prefix,
+    extensions
+) {
+    const entries =
+        await fsp.readdir(
+            directory,
+            {
+                withFileTypes: true,
+            }
+        );
 
     const files = [];
 
@@ -326,12 +509,39 @@ async function findVideoFile(directory) {
             continue;
         }
 
-        const fullPath = path.join(
-            directory,
-            entry.name
-        );
+        if (
+            !entry.name
+                .toLowerCase()
+                .startsWith(
+                    prefix.toLowerCase() + "."
+                )
+        ) {
+            continue;
+        }
 
-        const stat = await fsp.stat(fullPath);
+        const extension =
+            path.extname(
+                entry.name
+            ).toLowerCase();
+
+        if (
+            !extensions.includes(
+                extension
+            )
+        ) {
+            continue;
+        }
+
+        const fullPath =
+            path.join(
+                directory,
+                entry.name
+            );
+
+        const stat =
+            await fsp.stat(
+                fullPath
+            );
 
         if (stat.size > 0) {
             files.push({
@@ -346,99 +556,527 @@ async function findVideoFile(directory) {
         return null;
     }
 
-    /*
-     * Prefer MP4.
-     */
-    const mp4 = files.find((file) =>
-        file.name.toLowerCase().endsWith(".mp4")
+    files.sort(
+        (a, b) =>
+            b.size - a.size
     );
-
-    if (mp4) {
-        return mp4;
-    }
-
-    /*
-     * Otherwise return largest file.
-     */
-    files.sort((a, b) => b.size - a.size);
 
     return files[0];
 }
 
 /*
 |--------------------------------------------------------------------------
-| Download Instagram video
+| Check Audio Stream
 |--------------------------------------------------------------------------
 */
 
-async function downloadVideo(url, directory) {
-    const outputTemplate = path.join(
-        directory,
-        "%(id)s.%(ext)s"
+async function hasAudioStream(filePath) {
+    try {
+        const result =
+            await runFFmpeg([
+                "-hide_banner",
+                "-i",
+                filePath,
+            ]);
+
+        const output =
+            `${result.stdout}\n${result.stderr}`;
+
+        return /Audio:/i.test(output);
+    } catch (error) {
+        const output =
+            `${error.stdout || ""}\n${error.stderr || ""}`;
+
+        return /Audio:/i.test(output);
+    }
+}
+
+/*
+|--------------------------------------------------------------------------
+| Check Video Stream
+|--------------------------------------------------------------------------
+*/
+
+async function hasVideoStream(filePath) {
+    try {
+        const result =
+            await runFFmpeg([
+                "-hide_banner",
+                "-i",
+                filePath,
+            ]);
+
+        const output =
+            `${result.stdout}\n${result.stderr}`;
+
+        return /Video:/i.test(output);
+    } catch (error) {
+        const output =
+            `${error.stdout || ""}\n${error.stderr || ""}`;
+
+        return /Video:/i.test(output);
+    }
+}
+
+/*
+|--------------------------------------------------------------------------
+| Merge Video + Audio
+|--------------------------------------------------------------------------
+|
+| IMPORTANT:
+|
+| Input:
+|   video-source.mp4
+|   audio-source.m4a
+|
+| Output:
+|   final.mp4
+|
+| NEVER use video-source.mp4 as the output.
+|
+|--------------------------------------------------------------------------
+*/
+
+async function mergeVideoAndAudio(
+    videoFile,
+    audioFile,
+    outputFile
+) {
+    console.log("");
+    console.log(
+        "[MERGE] Video:",
+        videoFile
     );
 
+    console.log(
+        "[MERGE] Audio:",
+        audioFile
+    );
+
+    console.log(
+        "[MERGE] Output:",
+        outputFile
+    );
+
+    /*
+    |--------------------------------------------------------------------------
+    | Make absolutely sure output isn't one of the inputs
+    |--------------------------------------------------------------------------
+    */
+
+    const normalizedVideo =
+        path.resolve(videoFile);
+
+    const normalizedAudio =
+        path.resolve(audioFile);
+
+    const normalizedOutput =
+        path.resolve(outputFile);
+
+    if (
+        normalizedOutput ===
+        normalizedVideo
+    ) {
+        throw new Error(
+            "Merge output cannot be the same as the video input."
+        );
+    }
+
+    if (
+        normalizedOutput ===
+        normalizedAudio
+    ) {
+        throw new Error(
+            "Merge output cannot be the same as the audio input."
+        );
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | FFmpeg
+    |--------------------------------------------------------------------------
+    */
+
     const args = [
+        "-y",
+
+        "-i",
+        videoFile,
+
+        "-i",
+        audioFile,
+
+        "-map",
+        "0:v:0",
+
+        "-map",
+        "1:a:0",
+
+        /*
+        | Keep original VP9 video.
+        | No unnecessary video re-encoding.
+        */
+
+        "-c:v",
+        "copy",
+
+        /*
+        | Convert audio to AAC for broad MP4 compatibility.
+        */
+
+        "-c:a",
+        "aac",
+
+        "-b:a",
+        "192k",
+
+        /*
+        | Helps MP4 start playing before entire file loads.
+        */
+
+        "-movflags",
+        "+faststart",
+
+        outputFile,
+    ];
+
+    await runFFmpeg(args);
+
+    if (
+        !(await fileExists(outputFile))
+    ) {
+        throw new Error(
+            "FFmpeg did not create the merged MP4."
+        );
+    }
+
+    console.log(
+        "[MERGE] Successfully created:",
+        outputFile
+    );
+}
+
+/*
+|--------------------------------------------------------------------------
+| Download Video
+|--------------------------------------------------------------------------
+*/
+
+async function downloadVideo(
+    url,
+    directory
+) {
+    /*
+    |--------------------------------------------------------------------------
+    | Fixed temporary filenames
+    |--------------------------------------------------------------------------
+    */
+
+    const videoTemplate =
+        path.join(
+            directory,
+            "video-source.%(ext)s"
+        );
+
+    const audioTemplate =
+        path.join(
+            directory,
+            "audio-source.%(ext)s"
+        );
+
+    /*
+    |--------------------------------------------------------------------------
+    | IMPORTANT:
+    |
+    | final.mp4 is NEVER used as a source.
+    |--------------------------------------------------------------------------
+    */
+
+    const finalOutput =
+        path.join(
+            directory,
+            "final.mp4"
+        );
+
+    /*
+    |--------------------------------------------------------------------------
+    | STEP 1 - Video
+    |--------------------------------------------------------------------------
+    */
+
+    console.log("");
+    console.log(
+        "[DOWNLOAD] Step 1: Downloading video..."
+    );
+
+    const videoArgs = [
         "--no-warnings",
         "--no-playlist",
 
         /*
-         * Best video + audio.
-         *
-         * If a combined format exists, use it.
-         * Otherwise yt-dlp will download video/audio
-         * separately and FFmpeg will merge them.
-         */
+        | Instagram exposes DASH video-only streams.
+        */
+
         "-f",
-        "bestvideo*+bestaudio/best",
+        "bestvideo",
 
-        /*
-         * MP4-compatible output.
-         */
-        "--merge-output-format",
-        "mp4",
-
-        /*
-         * Let yt-dlp use FFmpeg.
-         */
-        "--ffmpeg-location",
-        FFMPEG_BIN,
-
-        /*
-         * Output.
-         */
         "-o",
-        outputTemplate,
+        videoTemplate,
 
-        /*
-         * Don't keep intermediate fragments.
-         */
-        "--no-keep-video",
-
-        /*
-         * Instagram URL.
-         */
         url,
     ];
 
-    await runYtDlp(args, {
-        cwd: directory,
-    });
+    await runYtDlp(
+        videoArgs,
+        {
+            cwd: directory,
+        }
+    );
 
-    const video = await findVideoFile(directory);
+    const videoFile =
+        await findFileByPrefix(
+            directory,
+            "video-source",
+            [
+                ".mp4",
+                ".webm",
+                ".mkv",
+            ]
+        );
 
-    if (!video) {
+    if (!videoFile) {
         throw new Error(
-            "yt-dlp completed but no video file was created."
+            "Video stream could not be downloaded."
         );
     }
 
-    if (video.size > MAX_VIDEO_SIZE_BYTES) {
+    console.log(
+        "[DOWNLOAD] Video stream:",
+        videoFile.path
+    );
+
+    console.log(
+        "[DOWNLOAD] Video size:",
+        `${(
+            videoFile.size /
+            1024 /
+            1024
+        ).toFixed(2)} MB`
+    );
+
+    /*
+    |--------------------------------------------------------------------------
+    | STEP 2 - Audio
+    |--------------------------------------------------------------------------
+    */
+
+    console.log("");
+    console.log(
+        "[DOWNLOAD] Step 2: Downloading audio..."
+    );
+
+    const audioArgs = [
+        "--no-warnings",
+        "--no-playlist",
+
+        "-f",
+        "bestaudio",
+
+        "-o",
+        audioTemplate,
+
+        url,
+    ];
+
+    await runYtDlp(
+        audioArgs,
+        {
+            cwd: directory,
+        }
+    );
+
+    const audioFile =
+        await findFileByPrefix(
+            directory,
+            "audio-source",
+            [
+                ".m4a",
+                ".aac",
+                ".mp3",
+                ".webm",
+                ".opus",
+            ]
+        );
+
+    if (!audioFile) {
         throw new Error(
-            `Video is larger than the ${MAX_VIDEO_SIZE_MB} MB limit.`
+            "Audio stream could not be downloaded."
         );
     }
 
-    return video;
+    console.log(
+        "[DOWNLOAD] Audio stream:",
+        audioFile.path
+    );
+
+    console.log(
+        "[DOWNLOAD] Audio size:",
+        `${(
+            audioFile.size /
+            1024
+        ).toFixed(2)} KB`
+    );
+
+    /*
+    |--------------------------------------------------------------------------
+    | STEP 3 - Verify source video
+    |--------------------------------------------------------------------------
+    */
+
+    console.log("");
+    console.log(
+        "[VERIFY] Checking source video..."
+    );
+
+    const sourceHasVideo =
+        await hasVideoStream(
+            videoFile.path
+        );
+
+    if (!sourceHasVideo) {
+        throw new Error(
+            "Downloaded video stream is invalid."
+        );
+    }
+
+    console.log(
+        "[VERIFY] Video stream OK."
+    );
+
+    /*
+    |--------------------------------------------------------------------------
+    | STEP 4 - Verify source audio
+    |--------------------------------------------------------------------------
+    */
+
+    console.log("");
+    console.log(
+        "[VERIFY] Checking source audio..."
+    );
+
+    const sourceHasAudio =
+        await hasAudioStream(
+            audioFile.path
+        );
+
+    if (!sourceHasAudio) {
+        throw new Error(
+            "Downloaded audio stream is invalid."
+        );
+    }
+
+    console.log(
+        "[VERIFY] Audio stream OK."
+    );
+
+    /*
+    |--------------------------------------------------------------------------
+    | STEP 5 - Merge
+    |--------------------------------------------------------------------------
+    */
+
+    console.log("");
+    console.log(
+        "[DOWNLOAD] Step 3: Merging video + audio..."
+    );
+
+    await mergeVideoAndAudio(
+        videoFile.path,
+        audioFile.path,
+        finalOutput
+    );
+
+    /*
+    |--------------------------------------------------------------------------
+    | STEP 6 - Verify final file
+    |--------------------------------------------------------------------------
+    */
+
+    console.log("");
+    console.log(
+        "[VERIFY] Checking final MP4..."
+    );
+
+    const finalHasVideo =
+        await hasVideoStream(
+            finalOutput
+        );
+
+    const finalHasAudio =
+        await hasAudioStream(
+            finalOutput
+        );
+
+    if (!finalHasVideo) {
+        throw new Error(
+            "Final MP4 does not contain a video stream."
+        );
+    }
+
+    if (!finalHasAudio) {
+        throw new Error(
+            "Final MP4 does not contain an audio stream."
+        );
+    }
+
+    console.log(
+        "[VERIFY] Final video stream: OK"
+    );
+
+    console.log(
+        "[VERIFY] Final audio stream: OK"
+    );
+
+    /*
+    |--------------------------------------------------------------------------
+    | Step 7 - Size check
+    |--------------------------------------------------------------------------
+    */
+
+    const stat =
+        await fsp.stat(
+            finalOutput
+        );
+
+    if (
+        stat.size >
+        MAX_VIDEO_SIZE_BYTES
+    ) {
+        throw new Error(
+            `Video is larger than ${MAX_VIDEO_SIZE_MB} MB.`
+        );
+    }
+
+    console.log("");
+    console.log(
+        "[DOWNLOAD COMPLETE]",
+        finalOutput
+    );
+
+    console.log(
+        "[DOWNLOAD SIZE]",
+        `${(
+            stat.size /
+            1024 /
+            1024
+        ).toFixed(2)} MB`
+    );
+
+    return {
+        path: finalOutput,
+        size: stat.size,
+        name: "final.mp4",
+    };
 }
 
 /*
@@ -447,15 +1085,33 @@ async function downloadVideo(url, directory) {
 |--------------------------------------------------------------------------
 */
 
-app.get("/api/health", async (req, res) => {
-    res.json({
-        success: true,
-        service: "Instagram Video Downloader API",
-        status: "ok",
-        port: PORT,
-        timestamp: new Date().toISOString(),
-    });
-});
+app.get(
+    "/api/health",
+    async (req, res) => {
+        res.json({
+            success: true,
+
+            service:
+                "Instagram Video Downloader API",
+
+            status: "ok",
+
+            port: PORT,
+
+            ytDlp:
+                YTDLP_BIN,
+
+            ffmpeg:
+                FFMPEG_BIN,
+
+            maxVideoSizeMB:
+                MAX_VIDEO_SIZE_MB,
+
+            timestamp:
+                new Date().toISOString(),
+        });
+    }
+);
 
 /*
 |--------------------------------------------------------------------------
@@ -467,7 +1123,8 @@ app.get(
     "/api/metadata",
     metadataLimiter,
     async (req, res) => {
-        const url = req.query.url;
+        const url =
+            req.query.url;
 
         if (!url) {
             return res.status(400).json({
@@ -476,9 +1133,12 @@ app.get(
             });
         }
 
-        if (!isInstagramUrl(url)) {
+        if (
+            !isInstagramUrl(url)
+        ) {
             return res.status(400).json({
                 success: false,
+
                 error:
                     "Please provide a valid Instagram Reel, Post, or TV URL.",
             });
@@ -486,7 +1146,9 @@ app.get(
 
         try {
             const normalizedUrl =
-                normalizeInstagramUrl(url);
+                normalizeInstagramUrl(
+                    url
+                );
 
             console.log(
                 "[METADATA]",
@@ -494,13 +1156,17 @@ app.get(
             );
 
             const info =
-                await getMetadata(normalizedUrl);
+                await getMetadata(
+                    normalizedUrl
+                );
 
             return res.json({
                 success: true,
 
                 data: {
-                    id: info.id || null,
+                    id:
+                        info.id ||
+                        null,
 
                     title:
                         info.title ||
@@ -508,7 +1174,8 @@ app.get(
                         "Instagram Video",
 
                     description:
-                        info.description || "",
+                        info.description ||
+                        "",
 
                     uploader:
                         info.uploader ||
@@ -520,16 +1187,20 @@ app.get(
                         null,
 
                     thumbnail:
-                        info.thumbnail || null,
+                        info.thumbnail ||
+                        null,
 
                     duration:
-                        info.duration || null,
+                        info.duration ||
+                        null,
 
                     width:
-                        info.width || null,
+                        info.width ||
+                        null,
 
                     height:
-                        info.height || null,
+                        info.height ||
+                        null,
 
                     webpage_url:
                         info.webpage_url ||
@@ -544,8 +1215,10 @@ app.get(
 
             return res.status(500).json({
                 success: false,
+
                 error:
                     "Could not extract Instagram metadata.",
+
                 details:
                     IS_PRODUCTION
                         ? undefined
@@ -557,12 +1230,16 @@ app.get(
 
 /*
 |--------------------------------------------------------------------------
-| Download handler
+| Download Handler
 |--------------------------------------------------------------------------
 */
 
-async function handleDownload(req, res) {
+async function handleDownload(
+    req,
+    res
+) {
     let tempDirectory = null;
+    let stream = null;
 
     try {
         const url =
@@ -572,21 +1249,29 @@ async function handleDownload(req, res) {
         if (!url) {
             return res.status(400).json({
                 success: false,
-                error: "Missing Instagram URL.",
+
+                error:
+                    "Missing Instagram URL.",
             });
         }
 
-        if (!isInstagramUrl(url)) {
+        if (
+            !isInstagramUrl(url)
+        ) {
             return res.status(400).json({
                 success: false,
+
                 error:
                     "Please provide a valid Instagram Reel, Post, or TV URL.",
             });
         }
 
         const normalizedUrl =
-            normalizeInstagramUrl(url);
+            normalizeInstagramUrl(
+                url
+            );
 
+        console.log("");
         console.log(
             "=================================================="
         );
@@ -596,31 +1281,37 @@ async function handleDownload(req, res) {
             normalizedUrl
         );
 
+        console.log(
+            "=================================================="
+        );
+
         /*
-         * Create a unique temporary directory.
-         *
-         * Nothing is stored permanently.
-         */
+        |--------------------------------------------------------------------------
+        | Create temporary directory
+        |--------------------------------------------------------------------------
+        */
+
         tempDirectory =
             await createJobDirectory();
 
         /*
-         * Download.
-         */
+        |--------------------------------------------------------------------------
+        | Download + merge
+        |--------------------------------------------------------------------------
+        */
+
         const video =
             await downloadVideo(
                 normalizedUrl,
                 tempDirectory
             );
 
-        console.log(
-            "[DOWNLOAD COMPLETE]",
-            video.path
-        );
-
         /*
-         * Determine filename.
-         */
+        |--------------------------------------------------------------------------
+        | Generate filename
+        |--------------------------------------------------------------------------
+        */
+
         let filename =
             `instagram-${Date.now()}.mp4`;
 
@@ -639,16 +1330,18 @@ async function handleDownload(req, res) {
 
             filename =
                 `${title}-${metadata.id || Date.now()}.mp4`;
-        } catch {
-            /*
-             * Metadata isn't required
-             * for downloading.
-             */
+        } catch (error) {
+            console.log(
+                "[FILENAME] Metadata unavailable."
+            );
         }
 
         /*
-         * Force browser download.
-         */
+        |--------------------------------------------------------------------------
+        | Headers
+        |--------------------------------------------------------------------------
+        */
+
         res.setHeader(
             "Content-Type",
             "video/mp4"
@@ -674,88 +1367,104 @@ async function handleDownload(req, res) {
             "no-cache"
         );
 
-        /*
-         * Create read stream.
-         */
-        const stream =
-            fs.createReadStream(video.path);
+        res.setHeader(
+            "Accept-Ranges",
+            "bytes"
+        );
 
         /*
-         * If the client disconnects,
-         * stop reading.
-         */
-        req.on("close", () => {
-            if (!res.writableEnded) {
-                stream.destroy();
+        |--------------------------------------------------------------------------
+        | Stream
+        |--------------------------------------------------------------------------
+        */
+
+        stream =
+            fs.createReadStream(
+                video.path
+            );
+
+        stream.on(
+            "error",
+            async (error) => {
+                console.error(
+                    "[STREAM ERROR]",
+                    error
+                );
+
+                await cleanupDirectory(
+                    tempDirectory
+                );
+
+                tempDirectory =
+                    null;
             }
-        });
+        );
 
-        /*
-         * When streaming is finished,
-         * remove temporary directory.
-         */
-        stream.on("close", async () => {
-            console.log(
-                "[CLEANUP]",
-                tempDirectory
-            );
+        stream.on(
+            "close",
+            async () => {
+                console.log(
+                    "[STREAM] Closed."
+                );
 
-            await cleanupDirectory(
-                tempDirectory
-            );
+                await cleanupDirectory(
+                    tempDirectory
+                );
 
-            tempDirectory = null;
-        });
+                tempDirectory =
+                    null;
+            }
+        );
 
-        stream.on("error", async (error) => {
-            console.error(
-                "[STREAM ERROR]",
-                error
-            );
+        req.on(
+            "close",
+            () => {
+                if (
+                    stream &&
+                    !res.writableEnded
+                ) {
+                    console.log(
+                        "[CLIENT] Disconnected."
+                    );
 
-            await cleanupDirectory(
-                tempDirectory
-            );
-
-            tempDirectory = null;
-        });
+                    stream.destroy();
+                }
+            }
+        );
 
         stream.pipe(res);
-
     } catch (error) {
         console.error(
             "[DOWNLOAD ERROR]",
             error
         );
 
-        /*
-         * Always clean temporary files.
-         */
+        if (stream) {
+            try {
+                stream.destroy();
+            } catch {}
+        }
+
         if (tempDirectory) {
             await cleanupDirectory(
                 tempDirectory
             );
 
-            tempDirectory = null;
+            tempDirectory =
+                null;
         }
 
         if (res.headersSent) {
             try {
                 res.end();
             } catch {}
+
             return;
         }
 
-        let statusCode = 500;
-
-        if (
-            error.code === "ENOENT"
-        ) {
-            statusCode = 500;
-        }
-
-        return res.status(statusCode).json({
+        return res.status(500).json({
             success: false,
+
             error:
                 "Unable to download this Instagram video.",
 
@@ -793,7 +1502,7 @@ app.post(
 
 /*
 |--------------------------------------------------------------------------
-| Clear temporary files
+| Clear Cache
 |--------------------------------------------------------------------------
 */
 
@@ -809,12 +1518,19 @@ app.delete(
 
             return res.json({
                 success: true,
+
                 message:
                     "Temporary files cleared.",
             });
         } catch (error) {
+            console.error(
+                "[CACHE ERROR]",
+                error
+            );
+
             return res.status(500).json({
                 success: false,
+
                 error:
                     "Could not clear temporary files.",
             });
@@ -828,12 +1544,16 @@ app.delete(
 |--------------------------------------------------------------------------
 */
 
-app.use((req, res) => {
-    res.status(404).json({
-        success: false,
-        error: "Endpoint not found.",
-    });
-});
+app.use(
+    (req, res) => {
+        res.status(404).json({
+            success: false,
+
+            error:
+                "Endpoint not found.",
+        });
+    }
+);
 
 /*
 |--------------------------------------------------------------------------
@@ -841,25 +1561,36 @@ app.use((req, res) => {
 |--------------------------------------------------------------------------
 */
 
-app.use((error, req, res, next) => {
-    console.error(
-        "[SERVER ERROR]",
-        error
-    );
+app.use(
+    (
+        error,
+        req,
+        res,
+        next
+    ) => {
+        console.error(
+            "[SERVER ERROR]",
+            error
+        );
 
-    if (res.headersSent) {
-        return next(error);
+        if (
+            res.headersSent
+        ) {
+            return next(error);
+        }
+
+        res.status(500).json({
+            success: false,
+
+            error:
+                "Internal server error.",
+        });
     }
-
-    res.status(500).json({
-        success: false,
-        error: "Internal server error.",
-    });
-});
+);
 
 /*
 |--------------------------------------------------------------------------
-| Startup
+| Start Server
 |--------------------------------------------------------------------------
 */
 
@@ -880,28 +1611,19 @@ async function startServer() {
         );
 
         console.log(
-            `Server: http://0.0.0.0:${PORT}`
+            `Server: http://127.0.0.1:${PORT}`
         );
 
-        console.log("");
-        console.log("Endpoints:");
         console.log(
-            `GET  /api/health`
-        );
-        console.log(
-            `GET  /api/metadata?url=INSTAGRAM_URL`
-        );
-        console.log(
-            `GET  /api/download/video?url=INSTAGRAM_URL`
-        );
-        console.log(
-            `POST /api/download/video`
-        );
-        console.log(
-            `DELETE /api/cache/clear`
+            "yt-dlp:",
+            YTDLP_BIN
         );
 
-        console.log("");
+        console.log(
+            "FFmpeg:",
+            FFMPEG_BIN
+        );
+
         console.log(
             "Temporary storage:",
             TEMP_ROOT
@@ -916,12 +1638,21 @@ async function startServer() {
             "============================================================"
         );
 
-        app.listen(PORT, "127.0.0.1", () => {
-            console.log(
-                `API running on port ${PORT}`
-            );
-        });
+        await checkDependencies();
 
+        app.listen(
+            PORT,
+            "127.0.0.1",
+            () => {
+                console.log(
+                    `API running on port ${PORT}`
+                );
+
+                console.log(
+                    "=================================================="
+                );
+            }
+        );
     } catch (error) {
         console.error(
             "Failed to start server:",
