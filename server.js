@@ -6,6 +6,7 @@ const {
     router: instagramDownloaderRouter,
     initializeInstagramDownloader,
 } = require("./routes/instagramDownloader");
+const locationFetchRouter = require("./routes/locationFetch");
 
 const app = express();
 
@@ -77,7 +78,11 @@ app.use(
     "/api/instagram",
     instagramDownloaderRouter
 );
-                                       
+  
+app.use(
+    "/api",
+    locationFetchRouter
+);
 /*
 |--------------------------------------------------------------------------
 | 404 Handler
